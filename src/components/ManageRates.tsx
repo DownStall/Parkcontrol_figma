@@ -1,178 +1,324 @@
-import React, { useState } from 'react';
-import { Button } from './figma/ui/button';
-import { Input } from './figma/ui/input';
-import { Card } from './figma/ui/card';
-import { ArrowLeft, Plus, Edit2, Trash2, X, Car, Bike } from 'lucide-react';
-import type { Screen } from "../App";
-
-
-interface ManageRatesProps {
-  navigate: (screen: Screen) => void;
-}
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, DollarSign, PlusCircle, Edit2, Trash2, X, Car, Bike, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { api } from '../services/api';
 
 interface Rate {
   id: number;
   vehicleType: string;
-  vehicleTypeLabel: string;
+  rateType: string;
   pricePerHour: number;
-  icon: React.ReactNode;
 }
 
-const initialRates: Rate[] = [
-  { id: 1, vehicleType: 'car', vehicleTypeLabel: 'Automóvil', pricePerHour: 15, icon: <Car size={24} className="text-blue-600" /> },
-  { id: 2, vehicleType: 'motorcycle', vehicleTypeLabel: 'Motocicleta', pricePerHour: 10, icon: <Bike size={24} className="text-purple-600" /> },
-];
+export const ManageRates: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const [rates, setRates] = useState<Rate[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export function ManageRates({ navigate }: ManageRatesProps) {
-  const [rates, setRates] = useState<Rate[]>(initialRates);
+  // Estado Modal Crear / Editar
   const [showModal, setShowModal] = useState(false);
   const [editingRate, setEditingRate] = useState<Rate | null>(null);
-  const [formData, setFormData] = useState({ vehicleTypeLabel: '', pricePerHour: '' });
+  const [vehicleType, setVehicleType] = useState('Automóvil');
+  const [rateType, setRateType] = useState('Por Hora');
+  const [pricePerHour, setPricePerHour] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleAddRate = () => {
-    setEditingRate(null);
-    setFormData({ vehicleTypeLabel: '', pricePerHour: '' });
-    setShowModal(true);
-  };
+  // Estado Modal Eliminar (Reemplaza window.confirm)
+  const [deletingRate, setDeletingRate] = useState<Rate | null>(null);
 
-  const handleEditRate = (rate: Rate) => {
-    setEditingRate(rate);
-    setFormData({ vehicleTypeLabel: rate.vehicleTypeLabel, pricePerHour: rate.pricePerHour.toString() });
-    setShowModal(true);
-  };
-
-  const handleDeleteRate = (id: number) => {
-    setRates(rates.filter(rate => rate.id !== id));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingRate) {
-      setRates(rates.map(rate =>
-        rate.id === editingRate.id
-          ? { ...rate, vehicleTypeLabel: formData.vehicleTypeLabel, pricePerHour: parseFloat(formData.pricePerHour) }
-          : rate
-      ));
-    } else {
-      const newRate: Rate = {
-        id: Math.max(...rates.map(r => r.id)) + 1,
-        vehicleType: 'custom',
-        vehicleTypeLabel: formData.vehicleTypeLabel,
-        pricePerHour: parseFloat(formData.pricePerHour),
-        icon: <Car size={24} className="text-gray-600" />
-      };
-      setRates([...rates, newRate]);
+  const loadRates = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getRates();
+      setRates(data);
+    } catch (err) {
+      console.error('Error cargando tarifas:', err);
+    } finally {
+      setLoading(false);
     }
-    setShowModal(false);
+  };
+
+  useEffect(() => {
+    loadRates();
+  }, []);
+
+  const handleOpenCreateModal = () => {
+    setEditingRate(null);
+    setVehicleType('Automóvil');
+    setRateType('Por Hora');
+    setPricePerHour('');
+    setErrorMsg('');
+    setShowModal(true);
+  };
+
+  const handleOpenEditModal = (rate: Rate) => {
+    setEditingRate(rate);
+    setVehicleType(rate.vehicleType || 'Automóvil');
+    setRateType(rate.rateType || 'Por Hora');
+    setPricePerHour(rate.pricePerHour.toString());
+    setErrorMsg('');
+    setShowModal(true);
+  };
+
+  const handleSaveRate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const price = parseFloat(pricePerHour);
+
+    if (isNaN(price) || price <= 0) {
+      setErrorMsg('Ingrese un valor mayor a $0.');
+      return;
+    }
+
+    try {
+      if (editingRate) {
+        await api.updateRate(editingRate.id, {
+          vehicleType,
+          rateType,
+          pricePerHour: price
+        });
+
+        await api.addAuditLog(
+          'CAMBIO_TARIFA',
+          'admin',
+          `Tarifa de ${vehicleType} actualizada a ${rateType} ($${price.toLocaleString()})`
+        );
+      } else {
+        await api.createRate({
+          vehicleType,
+          rateType,
+          pricePerHour: price
+        });
+
+        await api.addAuditLog(
+          'CAMBIO_TARIFA',
+          'admin',
+          `Nueva tarifa creada para ${vehicleType} (${rateType}) en $${price.toLocaleString()}`
+        );
+      }
+
+      setShowModal(false);
+      loadRates();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al guardar la tarifa');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingRate) return;
+
+    try {
+      await api.deleteRate(deletingRate.id);
+      await api.addAuditLog(
+        'CAMBIO_TARIFA',
+        'admin',
+        `Tarifa para ${deletingRate.vehicleType} (${deletingRate.rateType || 'Por Hora'}) eliminada`
+      );
+      setDeletingRate(null);
+      loadRates();
+    } catch (err: any) {
+      alert(`Error al eliminar: ${err.message}`);
+    }
+  };
+
+  const getVehicleIcon = (type: string) => {
+    const t = type.toLowerCase();
+    if (t.includes('moto') || t.includes('bici')) return <Bike size={22} className="text-purple-400" />;
+    return <Car size={22} className="text-blue-400" />;
+  };
+
+  const formatRateLabel = (type?: string) => {
+    if (!type) return 'Hora';
+    if (type === 'Por Día') return 'Día';
+    if (type === 'Tarifa Fija') return 'Fijo';
+    return 'Hora';
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 pt-6 pb-8">
-        <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={() => navigate('dashboard')}
-            className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft size={20} className="text-white" />
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800">
+            <ArrowLeft size={20} />
           </button>
-          <h1 className="text-white flex-1">Gestionar Tarifas</h1>
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
+              <DollarSign size={24} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white">Gestionar Tarifas</h1>
+              <p className="text-xs text-slate-400">Parámetros de cobro por vehículo y modalidad</p>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-3">
-          <p className="text-purple-100 text-sm">Total de tarifas configuradas</p>
-          <p className="text-white text-2xl">{rates.length}</p>
-        </div>
+        <button
+          onClick={handleOpenCreateModal}
+          className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-violet-600/20"
+        >
+          <PlusCircle size={16} /> Nueva Tarifa
+        </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 px-6 pt-6 pb-6 overflow-y-auto">
-        <div className="space-y-3 mb-4">
-          {rates.map((rate) => (
-            <Card key={rate.id}>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                  {rate.icon}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <p className="text-gray-900 mb-1">{rate.vehicleTypeLabel}</p>
-                  <p className="text-purple-600">${rate.pricePerHour} / hora</p>
-                </div>
+      <div className="max-w-2xl mx-auto space-y-4">
+        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+          <span className="text-xs text-slate-400 font-semibold">Total de Tarifas Configuradas</span>
+          <span className="text-2xl font-bold text-violet-400">{rates.length}</span>
+        </div>
 
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleEditRate(rate)}
-                    className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center hover:bg-blue-200 transition-colors"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteRate(rate.id)}
-                    className="w-10 h-10 bg-red-100 text-red-600 rounded-lg flex items-center justify-center hover:bg-red-200 transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+        <div className="space-y-3">
+          {rates.map((rate) => (
+            <div key={rate.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  {getVehicleIcon(rate.vehicleType)}
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">{rate.vehicleType}</h3>
+                  <p className="text-xs text-violet-400 font-extrabold mt-0.5">
+                    ${rate.pricePerHour.toLocaleString()} <span className="text-slate-400 font-normal">/ {formatRateLabel(rate.rateType)}</span>
+                  </p>
                 </div>
               </div>
-            </Card>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleOpenEditModal(rate)}
+                  className="p-2 rounded-xl bg-slate-950 border border-slate-800 text-blue-400 hover:bg-slate-800 transition-colors"
+                  title="Editar Tarifa"
+                >
+                  <Edit2 size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeletingRate(rate)}
+                  className="p-2 rounded-xl bg-slate-950 border border-slate-800 text-red-400 hover:bg-slate-800 transition-colors"
+                  title="Eliminar Tarifa"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
           ))}
         </div>
-
-        <Button fullWidth size="lg" onClick={handleAddRate}>
-          <Plus size={20} />
-          Agregar Nueva Tarifa
-        </Button>
       </div>
 
-      {/* Modal */}
+      {/* MODAL CREAR / EDITAR TARIFA */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-          <div className="bg-white rounded-t-3xl w-full max-w-[360px] p-6 animate-slide-up">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-gray-900">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 text-violet-400">
+              <DollarSign size={20} />
+              <h3 className="font-bold text-white text-base">
                 {editingRate ? 'Editar Tarifa' : 'Nueva Tarifa'}
-              </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors"
-              >
-                <X size={20} />
-              </button>
+              </h3>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <Input
-                label="Tipo de Vehículo"
-                placeholder="Ej: Camioneta"
-                value={formData.vehicleTypeLabel}
-                onChange={(e) => setFormData({ ...formData, vehicleTypeLabel: e.target.value })}
-                required
-              />
+            <form onSubmit={handleSaveRate} className="space-y-4">
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                  <ShieldAlert size={16} />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
 
-              <Input
-                label="Precio por Hora ($)"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={formData.pricePerHour}
-                onChange={(e) => setFormData({ ...formData, pricePerHour: e.target.value })}
-                required
-              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Tipo de Vehículo</label>
+                <select
+                  value={vehicleType}
+                  onChange={(e) => setVehicleType(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm font-medium focus:outline-none focus:border-violet-500"
+                >
+                  <option value="Automóvil">Automóvil</option>
+                  <option value="Motocicleta">Motocicleta</option>
+                  <option value="Bicicleta">Bicicleta</option>
+                  <option value="Otros">Otros</option>
+                </select>
+              </div>
 
-              <div className="flex gap-3 pt-2">
-                <Button type="button" variant="secondary" fullWidth onClick={() => setShowModal(false)}>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Tipo de Tarifa</label>
+                <select
+                  value={rateType}
+                  onChange={(e) => setRateType(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm font-medium focus:outline-none focus:border-violet-500"
+                >
+                  <option value="Por Hora">Por Hora</option>
+                  <option value="Por Día">Por Día</option>
+                  <option value="Tarifa Fija">Tarifa Fija</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Valor de la Tarifa ($)</label>
+                <input
+                  type="number"
+                  placeholder="Ej: 3500"
+                  value={pricePerHour}
+                  onChange={(e) => setPricePerHour(e.target.value)}
+                  required
+                  min="1"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 text-sm font-bold focus:outline-none focus:border-violet-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors"
+                >
                   Cancelar
-                </Button>
-                <Button type="submit" fullWidth>
-                  {editingRate ? 'Guardar' : 'Crear'}
-                </Button>
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-xs font-bold text-white shadow-lg shadow-violet-600/20 transition-colors"
+                >
+                  {editingRate ? 'Guardar Cambios' : 'Crear Tarifa'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* MODAL PERSONALIZADA DE ELIMINACIÓN */}
+      {deletingRate && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertTriangle size={20} />
+              <h3 className="font-bold text-white text-base">Eliminar Tarifa</h3>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              ¿Está seguro de que desea eliminar la tarifa para <strong className="text-white">{deletingRate.vehicleType}</strong> ({deletingRate.rateType || 'Por Hora'}) con valor de <strong className="text-violet-400">${deletingRate.pricePerHour.toLocaleString()}</strong>?
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingRate(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white shadow-lg shadow-red-600/20"
+              >
+                Confirmar Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};

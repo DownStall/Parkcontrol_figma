@@ -1,101 +1,120 @@
 import React, { useState } from 'react';
-import { Button } from './figma/ui/button';
-import { Input } from './figma/ui/input';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Car, Lock, User, ShieldAlert, ArrowRight, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface LoginProps {
-  onLogin: () => void;
+  onLoginSuccess: (username: string) => void;
 }
 
-export function Login({ onLogin }: LoginProps) {
-  const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('');
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+  const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin();
+    setErrorMsg('');
+
+    if (!username.trim() || !password.trim()) {
+      setErrorMsg('Por favor ingrese usuario y contraseña.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await api.login({
+        username: username.trim(),
+        password: password.trim()
+      });
+
+      onLoginSuccess(response.user.username);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Usuario o contraseña incorrectos.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50 p-6">
-      {/* Decorative Background Shapes */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-        <div className="absolute -top-20 -right-20 w-64 h-64 bg-blue-100 rounded-full opacity-30 blur-3xl"></div>
-        <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-blue-200 rounded-full opacity-20 blur-3xl"></div>
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10 flex-1 flex flex-col justify-center">
-        {/* Logo/Icon */}
-        <div className="flex justify-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl shadow-lg flex items-center justify-center">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-              <path d="M8 14C8 11.7909 9.79086 10 12 10H28C30.2091 10 32 11.7909 32 14V30C32 32.2091 30.2091 34 28 34H12C9.79086 34 8 32.2091 8 30V14Z" fill="white"/>
-              <rect x="12" y="6" width="16" height="4" rx="2" fill="white"/>
-              <circle cx="15" cy="22" r="2" fill="#2563EB"/>
-              <circle cx="25" cy="22" r="2" fill="#2563EB"/>
-              <path d="M12 28H28" stroke="#2563EB" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-6 shadow-2xl relative overflow-hidden">
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shadow-lg shadow-blue-500/10">
+            <Car size={36} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-white">ParkControl</h1>
+            <p className="text-xs text-slate-400 mt-1">Sistema de Control e Inspección de Estacionamiento</p>
           </div>
         </div>
 
-        {/* Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-gray-900 mb-2">Parkcontrol</h1>
-          <p className="text-gray-600">Gestiona tu estacionamiento fácilmente</p>
-        </div>
+        <form onSubmit={handleLogin} className="space-y-4">
+          {errorMsg && (
+            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+              <ShieldAlert size={18} className="shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            type="email"
-            label="Email o Usuario"
-            placeholder="tu@email.com"
-            icon={<Mail size={20} />}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Usuario de Sistema</label>
+            <div className="relative">
+              <User size={18} className="absolute left-3.5 top-3 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Ej: admin"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-600 text-sm font-medium focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
 
-          <Input
-            type={showPassword ? 'text' : 'password'}
-            label="Contraseña"
-            placeholder="Ingresa tu contraseña"
-            icon={<Lock size={20} />}
-            rightIcon={
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="hover:text-gray-600 transition-colors"
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            }
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Contraseña</label>
+            <div className="relative">
+              <Lock size={18} className="absolute left-3.5 top-3 text-slate-500" />
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-600 text-sm font-medium focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
 
-          <button 
-            type="button"
-            className="text-blue-600 hover:text-blue-700 transition-colors"
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition-all mt-2"
           >
-            ¿Olvidaste tu contraseña?
+            {loading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>Iniciando Sesión...</span>
+              </>
+            ) : (
+              <>
+                <span>Ingresar al Sistema</span>
+                <ArrowRight size={18} />
+              </>
+            )}
           </button>
-
-          <div className="pt-4">
-            <Button type="submit" fullWidth size="lg">
-              Iniciar Sesión
-            </Button>
-          </div>
         </form>
-      </div>
 
-      {/* Footer */}
-      <div className="relative z-10 text-center text-gray-500 text-sm mt-8">
-        © 2025 Parkcontrol. Todos los derechos reservados.
+        <div className="text-center pt-2 border-t border-slate-800/80">
+          <p className="text-[11px] text-slate-500">
+            ParkControl v2.0 &bull; Local Desktop Architecture
+          </p>
+        </div>
       </div>
     </div>
   );
-}
+};
+
+export default Login;

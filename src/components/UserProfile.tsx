@@ -1,269 +1,274 @@
-import { useState } from "react";
-import { Button } from "./figma/ui/button";
-import { Input } from "./figma/ui/input";
-import { Card } from "./figma/ui/card";
-import { ArrowLeft, User, Lock, LogOut, X, CheckCircle2 } from "lucide-react";
-import type { Screen } from "../App";
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, User, Lock, LogOut, ShieldAlert, KeyRound, CheckCircle2, X, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
 
-interface UserProfileProps {
-  navigate: (screen: Screen) => void;
-  onLogout: () => void;
-}
+export const UserProfile: React.FC<{ onBack: () => void; onLogout?: () => void }> = ({ onBack, onLogout }) => {
+  const [profile, setProfile] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export function UserProfile({ navigate, onLogout }: UserProfileProps) {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [updating, setUpdating] = useState(false);
 
-  const [passwordData, setPasswordData] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
-
-  const handleLogout = () => {
-    if (window.confirm("¿Estás seguro que deseas cerrar sesión?")) {
-      onLogout();
+  const loadProfile = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getUserProfile();
+      setProfile(data);
+    } catch (err) {
+      console.error('Error cargando perfil:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const handleOpenPasswordModal = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setErrorMsg('');
+    setShowPasswordModal(true);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !passwordData.currentPassword ||
-      !passwordData.newPassword ||
-      !passwordData.confirmPassword
-    ) {
-      alert("Completa todos los campos.");
+    if (!currentPassword.trim()) {
+      setErrorMsg('Debe ingresar su contraseña actual.');
       return;
     }
 
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      alert("La nueva contraseña y la confirmación no coinciden.");
+    if (newPassword.length < 4) {
+      setErrorMsg('La nueva contraseña debe tener al menos 4 caracteres.');
       return;
     }
 
-    setShowPasswordModal(false);
-    setShowSuccess(true);
+    if (newPassword !== confirmPassword) {
+      setErrorMsg('La nueva contraseña y la confirmación no coinciden.');
+      return;
+    }
 
-    setPasswordData({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
+    setUpdating(true);
+    setErrorMsg('');
 
-    setTimeout(() => {
-      setShowSuccess(false);
-    }, 2000);
+    try {
+      await api.changePassword({ currentPassword, newPassword });
+
+      await api.addAuditLog(
+        'CAMBIO_PASSWORD',
+        profile?.username || 'admin',
+        `El usuario ${profile?.fullName || 'Administrador'} cambió exitosamente su contraseña`
+      );
+
+      alert('Contraseña actualizada correctamente.');
+      setShowPasswordModal(false);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al cambiar la contraseña');
+    } finally {
+      setUpdating(false);
+    }
   };
 
+  const memberSinceFormatted = profile?.createdAtMillis
+    ? new Date(profile.createdAtMillis).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
+    : 'Enero 2024';
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 p-6 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-slate-400">
+          <Loader2 size={20} className="animate-spin text-blue-500" />
+          <span className="text-xs">Cargando perfil...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full overflow-y-auto bg-gray-100">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-6 pt-6 pb-14">
-        <div className="mb-8 flex items-center gap-4">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6">
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={onBack} className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800">
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h1 className="text-xl font-bold text-white">Perfil de Usuario</h1>
+          <p className="text-xs text-slate-400">Información de la cuenta, estadísticas y credenciales</p>
+        </div>
+      </div>
+
+      <div className="max-w-xl mx-auto space-y-4">
+        <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
+          <div className="w-20 h-20 mx-auto rounded-full bg-slate-950 border-2 border-blue-500/30 flex items-center justify-center text-blue-400">
+            <User size={40} />
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-black text-white">{profile?.fullName || 'Administrador ParkControl'}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{profile?.role || 'Administrador'}</p>
+          </div>
+
+          <span className="inline-block px-4 py-1.5 rounded-full bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-300">
+            {profile?.email || 'admin@parkcontrol.com'}
+          </span>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Información de la Cuenta</h3>
+
+          <div className="flex justify-between items-center text-xs py-2 border-b border-slate-800">
+            <span className="text-slate-400 font-medium">Nombre completo</span>
+            <strong className="text-slate-100">{profile?.fullName || 'Administrador ParkControl'}</strong>
+          </div>
+
+          <div className="flex justify-between items-center text-xs py-2 border-b border-slate-800">
+            <span className="text-slate-400 font-medium">Email</span>
+            <strong className="text-slate-100">{profile?.email || 'admin@parkcontrol.com'}</strong>
+          </div>
+
+          <div className="flex justify-between items-center text-xs py-2 border-b border-slate-800">
+            <span className="text-slate-400 font-medium">Rol de sistema</span>
+            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              {profile?.role || 'Administrador'}
+            </span>
+          </div>
+
+          <div className="flex justify-between items-center text-xs py-2">
+            <span className="text-slate-400 font-medium">Miembro desde</span>
+            <strong className="text-slate-100 capitalize">{memberSinceFormatted}</strong>
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+          <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider">Estadísticas de Actividad Global</h3>
+
+          <div className="grid grid-cols-2 gap-3 text-center pt-1">
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-xs text-slate-400 font-medium">Entradas Registradas</span>
+              <p className="text-2xl font-black text-blue-400 mt-1">
+                {(profile?.totalEntries || 0).toLocaleString()}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+              <span className="text-xs text-slate-400 font-medium">Salidas Registradas</span>
+              <p className="text-2xl font-black text-emerald-400 mt-1">
+                {(profile?.totalExits || 0).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2 pt-2">
           <button
-            onClick={() => navigate("dashboard")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 transition-colors hover:bg-white/30"
+            onClick={handleOpenPasswordModal}
+            className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
           >
-            <ArrowLeft size={20} className="text-white" />
+            <Lock size={16} className="text-amber-400" />
+            <span>Cambiar Contraseña</span>
           </button>
 
-          <h1 className="text-2xl font-bold text-white">Perfil de Usuario</h1>
-        </div>
-
-        {/* Perfil */}
-        <div className="flex flex-col items-center">
-          <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white/20 bg-white/10">
-            <User size={40} className="text-white" />
-          </div>
-
-          <h2 className="text-2xl font-semibold text-white">Juanchopala Pérez</h2>
-          <p className="mt-1 text-gray-300">Administrador</p>
-
-          <div className="mt-3 rounded-xl bg-white/10 px-4 py-2">
-            <p className="text-sm text-white">juan.perez@parkingapp.com</p>
-          </div>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-600/20"
+            >
+              <LogOut size={16} />
+              <span>Cerrar Sesión</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Contenido */}
-      <div className="-mt-8 rounded-t-3xl bg-gray-100 px-6 pt-6 pb-10">
-        <div className="space-y-4">
-          {/* Información */}
-          <Card className="rounded-2xl bg-white p-5 shadow-md">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">
-              Información del Usuario
-            </h3>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between border-b border-gray-200 py-2">
-                <span className="text-gray-600">Nombre completo</span>
-                <span className="text-gray-900">Juan Pérez</span>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-200 py-2">
-                <span className="text-gray-600">Email</span>
-                <span className="text-sm text-gray-900">
-                  juan.perez@parkingapp.com
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-gray-200 py-2">
-                <span className="text-gray-600">Rol</span>
-                <span className="rounded-lg bg-blue-100 px-3 py-1 text-sm text-blue-700">
-                  Administrador
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-2">
-                <span className="text-gray-600">Miembro desde</span>
-                <span className="text-gray-900">Enero 2024</span>
-              </div>
-            </div>
-          </Card>
-
-          {/* Estadísticas */}
-          <Card className="rounded-2xl border border-blue-300 bg-[#EAF3FF] p-5 shadow-md">
-            <h3 className="mb-4 text-lg font-semibold text-blue-800">
-              Estadísticas de Actividad
-            </h3>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="mb-1 text-sm text-blue-700">Entradas Registradas</p>
-                <p className="text-2xl font-bold text-blue-900">1,234</p>
-              </div>
-
-              <div>
-                <p className="mb-1 text-sm text-blue-700">Salidas Registradas</p>
-                <p className="text-2xl font-bold text-blue-900">1,189</p>
-              </div>
-            </div>
-          </Card>
-
-          {/* Acciones */}
-          <div className="space-y-3">
-            <Button
-              fullWidth
-              size="lg"
-              variant="secondary"
-              onClick={() => setShowPasswordModal(true)}
-            >
-              <Lock size={18} />
-              Cambiar Contraseña
-            </Button>
-
-            <Button
-              fullWidth
-              size="lg"
-              variant="danger"
-              onClick={handleLogout}
-            >
-              <LogOut size={18} />
-              Cerrar Sesión
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Modal cambiar contraseña */}
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-t-3xl bg-white p-6">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Cambiar Contraseña
-              </h2>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setShowPasswordModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
 
-              <button
-                onClick={() => setShowPasswordModal(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 transition-colors hover:bg-gray-200"
-              >
-                <X size={20} className="text-gray-700" />
-              </button>
+            <div className="flex items-center gap-2 text-amber-400">
+              <KeyRound size={20} />
+              <h3 className="font-bold text-white text-base">Cambiar Contraseña</h3>
             </div>
 
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <Input
-                label="Contraseña actual"
-                type="password"
-                placeholder="Ingresa tu contraseña actual"
-                value={passwordData.currentPassword}
-                onChange={(e) =>
-                  setPasswordData({
-                    ...passwordData,
-                    currentPassword: e.target.value,
-                  })
-                }
-                required
-              />
+            <form onSubmit={handleChangePassword} className="space-y-3">
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                  <ShieldAlert size={16} />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
 
-              <Input
-                label="Nueva contraseña"
-                type="password"
-                placeholder="Ingresa tu nueva contraseña"
-                value={passwordData.newPassword}
-                onChange={(e) =>
-                  setPasswordData({
-                    ...passwordData,
-                    newPassword: e.target.value,
-                  })
-                }
-                required
-              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Contraseña Actual</label>
+                <input
+                  type="password"
+                  placeholder="Ingrese contraseña actual"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-              <Input
-                label="Confirmar nueva contraseña"
-                type="password"
-                placeholder="Confirma tu nueva contraseña"
-                value={passwordData.confirmPassword}
-                onChange={(e) =>
-                  setPasswordData({
-                    ...passwordData,
-                    confirmPassword: e.target.value,
-                  })
-                }
-                required
-              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Nueva Contraseña</label>
+                <input
+                  type="password"
+                  placeholder="Mínimo 4 caracteres"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
 
-              <div className="flex gap-3 pt-2">
-                <Button
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Confirmar Nueva Contraseña</label>
+                <input
+                  type="password"
+                  placeholder="Repita la nueva contraseña"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
                   type="button"
-                  variant="secondary"
-                  fullWidth
                   onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300"
                 >
                   Cancelar
-                </Button>
-
-                <Button type="submit" fullWidth>
-                  Guardar
-                </Button>
+                </button>
+                <button
+                  type="submit"
+                  disabled={updating}
+                  className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-xs font-bold text-white flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={16} />
+                  <span>{updating ? 'Verificando...' : 'Actualizar Contraseña'}</span>
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
-      {/* Mensaje de éxito */}
-      {showSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
-          <div className="w-full max-w-xs rounded-2xl bg-white p-8 text-center shadow-xl">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-              <CheckCircle2 size={32} className="text-green-600" />
-            </div>
-
-            <h3 className="mb-2 text-lg font-semibold text-gray-900">
-              ¡Contraseña Actualizada!
-            </h3>
-
-            <p className="text-gray-600">
-              Tu contraseña ha sido cambiada exitosamente.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
+};
+
+export default UserProfile;
